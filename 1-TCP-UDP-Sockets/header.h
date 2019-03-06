@@ -9,7 +9,7 @@
 typedef struct token_t {
     int msg_size;
     int msg_num;
-    struct sockaddr receiver;
+    struct sockaddr_in receiver;
 } token_t;
 
 #endif

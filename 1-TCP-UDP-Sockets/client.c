@@ -11,6 +11,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include <sys/times.h>
+#include <sys/ioctl.h>
 #include <time.h>
 #include <pthread.h>
 #include <sys/socket.h>
@@ -26,18 +27,26 @@
 
 int sock_type;
 bool has_token = false;
-
 char* my_name = NULL;
-struct sockaddr* my_socket = NULL;
+
+struct sockaddr_in my_socket;
 int my_socket_fd = -1; 
 
-struct sockaddr* neighbor_socket = NULL;
+struct sockaddr_in neighbor_socket;
 int neighbor_socket_fd = -1; 
+
+struct sockaddr_in receiver_socket;
+char* messagge;
+pthread_mutex_t messagge_mutex;
+
+pthread_t token_handling_thread;
+pthread_t terminal_thread;
 
 void parse(int argc, char **argv);
 void configure_my_socket();
 void connect_neighbor_socket();
 void *terminal(void* args);
+void *token_handling(void* args);
 void sigint_handler(int signo);
 void clean_up();
 
@@ -52,10 +61,16 @@ int main (int argc, char **argv){
     //connect_neighbor_socket();
     printf("Hi, I am client %s\n",my_name);
 
-    terminal(NULL);
-
-    //my_routine();
+    sigset_t set;
+    int sig;
+    sigemptyset(&set);
+    sigaddset(&set, SIGINT);
+    pthread_sigmask(SIG_BLOCK, &set, NULL);
     
+    if(pthread_create(&token_handling_thread,  NULL, token_handling, NULL)==-1) ERR("token handling pthread_create error");
+    if(pthread_create(&terminal_thread,  NULL, terminal, NULL)==-1) ERR("terminal pthread_create error");
+    
+    sigwait(&set, &sig); 
     exit(EXIT_SUCCESS);
 }
 
@@ -68,21 +83,13 @@ void parse(int argc, char **argv){
     memset(&addr, 0, sizeof(addr));
     if(inet_pton(AF_INET, argv[2], &addr) < 0) ERR("Inet_pton failed") //przekształca podany jako string adres 	
 
-	struct sockaddr_in sin_addr;
-	memset(&sin_addr, 0, sizeof(sin_addr));
-	sin_addr.sin_family = AF_INET;
-	sin_addr.sin_port = htons(atoi(argv[3]));
-	sin_addr.sin_addr = addr; 
+	memset(&neighbor_socket, 0, sizeof(neighbor_socket));
+	neighbor_socket.sin_family = AF_INET;
+	neighbor_socket.sin_port = htons((uint16_t) atoi(argv[3]));
+	neighbor_socket.sin_addr = addr; 
 
-    my_socket = (struct sockaddr *) &sin_addr;
-	
-	neighbor_socket = (struct sockaddr*) &sin_addr;
+    has_token = strcmp(argv[4],"token") == 0;
 
-    if(strcmp(argv[4],"token") == 0)
-        has_token = true;
-    else
-        has_token = false;
-    
     if(strcmp(argv[5],"TCP") == 0){
         sock_type = SOCK_STREAM;
     }else if(strcmp(argv[5],"UDP") == 0){
@@ -102,15 +109,12 @@ void configure_my_socket(){
     memset(&addr, 0, sizeof(addr));
     addr.s_addr = INADDR_ANY; //any ip address
 
-	struct sockaddr_in sin_addr;
-	memset(&sin_addr, 0, sizeof(sin_addr));
-	sin_addr.sin_family = AF_INET;
-	sin_addr.sin_port = 0; //next available high port.
-	sin_addr.sin_addr = addr; 
+	memset(&my_socket, 0, sizeof(my_socket));
+	my_socket.sin_family = AF_INET;
+	my_socket.sin_port = 0; //next available high port.
+	my_socket.sin_addr = addr; 
 
-    my_socket = (struct sockaddr *) &sin_addr;
-	
-    if(bind(my_socket_fd,my_socket, sizeof(struct sockaddr)) == -1) ERR("Bind inet failed")
+    if(bind(my_socket_fd,(struct sockaddr*) &my_socket, sizeof(struct sockaddr)) == -1) ERR("Bind inet failed")
 
     if (sock_type == SOCK_STREAM)
         if(listen(my_socket_fd, CLIENT_MAX) == -1) ERR("Listen inet failed")
@@ -118,7 +122,7 @@ void configure_my_socket(){
 
 void connect_neighbor_socket(){
     if ((neighbor_socket_fd = socket(AF_INET, sock_type, 0)) < 0) ERR("Socket inet failed")
-    if (connect(neighbor_socket_fd,neighbor_socket, sizeof(struct sockaddr_in)) < 0) ERR("Connect failed")
+    if (connect(neighbor_socket_fd,(struct sockaddr*) &neighbor_socket, sizeof(struct sockaddr_in)) < 0) ERR("Connect failed")
 }
 
 void pass_token(token_t token, char* messagge){
@@ -144,80 +148,85 @@ void *terminal(void* args){
         inputLength = strlen(input);
         input[inputLength-1]='\0';  
 
-        printf("%ld\n",inputLength);
-
-        char *ip_addr_str = NULL, *port_str = NULL,*messagge = NULL,*context;
+        char *context;
     
-        ip_addr_str = strtok_r (input, delimiter, &context);
+        char * ip_addr_str = strtok_r (input, delimiter, &context);
         if (ip_addr_str == NULL || ip_addr_str[0] == '\0'){
             printf("IP address is empty!\n");
             continue;
         }
-        port_str = strtok_r (NULL, delimiter, &context);
+        char * port_str = strtok_r (NULL, delimiter, &context);
         if (port_str == NULL || port_str[0] == '\0'){
             printf("Port number is empty!\n");
             continue;
         }
-        messagge = context;
-        if (messagge == NULL || messagge[0] == '\0'){
+        
+        if (context == NULL || context[0] == '\0'){
             printf("Messagge is empty!\n");
             continue;
         }
 
+        pthread_mutex_lock(&messagge_mutex);
+
+        //prepare address structures
+        struct in_addr addr; 
+        memset(&addr, 0, sizeof(addr));
+        if(inet_pton(AF_INET, ip_addr_str, &addr) != 1){
+            printf("IP address is not valid!\n");
+            pthread_mutex_unlock(&messagge_mutex);
+            continue;
+        }
+
+        memset(&receiver_socket, 0, sizeof(receiver_socket));
+        receiver_socket.sin_family = AF_INET;
+        receiver_socket.sin_port = htons((uint16_t) atoi(port_str));
+        receiver_socket.sin_addr = addr; 
+
+        messagge = context;
+        pthread_mutex_unlock(&messagge_mutex);
+
+        /*
         printf("IP address: %s\n", ip_addr_str);
         printf("Port: %s\n", port_str);
         printf("Messagge: %s\n", messagge);
-
-        //prepare address structures
-        /*
-        struct in_addr addr; 
-        memset(&addr, 0, sizeof(addr));
-        if(inet_pton(AF_INET, ip_addr_str, &addr) < 0){
-            printf("IP address is not valid!\n");
-            break;
-        }
-
-        struct sockaddr_in sin_addr;
-        memset(&sin_addr, 0, sizeof(sin_addr));
-        sin_addr.sin_family = AF_INET;
-        sin_addr.sin_port = htons(atoi(port_str));
-        sin_addr.sin_addr = addr; 
         */
-
-        
     }
    return (void *) 0;
 }
 
-void *token_handling(){
-	char messagge[CONTENT_MAX];
-    token_t token;
+bool is_my_socket(struct sockaddr_in receiver){
+    //struct in_addr receiver_addr = (struct in_addr) receiver.sin_addr;
+    //struct in_addr my_addr = (struct in_addr) my_socket.sin_addr;
+    return ((receiver.sin_addr.s_addr == my_socket.sin_addr.s_addr) && (receiver.sin_family == my_socket.sin_family) && (receiver.sin_port == my_socket.sin_port));
+}
 
-    /* TODO
+void *token_handling(void* args){
+	char buff[CONTENT_MAX];
+    token_t token;
+    int len;
+    
     while(1){
+        ioctl(my_socket_fd, FIONREAD, &len);
+        if (len <= 0){ 
+            continue;            
+        }
+
         read(my_socket_fd, &token, sizeof(token_t));
+        read(my_socket_fd, buff, token.msg_size);
 
         if(token.msg_size!=0){
-            read(my_socket_fd, messagge, token.msg_size);
-            if(0==0){
-                //READ MESSAGGE
+            
+            if(is_my_socket(token.receiver)){
+                printf("Messagge: %s",buff);
             }else{
-                pass_token(token,messagge);
+                pass_token(token,buff);
             }
         }else{
-            if(0==0){//propablity
-
-                token.msg_num++;
-                token.msg_size
-        
-                
-                pass_token(token,messagge);
-            }else{
-                pass_token(token,messagge);
-            }
+            pass_token(token,buff);
+            //TODO send messagge
         }   
     }
-    */
+    
    return (void *) 0;
 }
 
@@ -234,4 +243,7 @@ void clean_up(){
     if(my_socket_fd != -1) 
         if (close(my_socket_fd))
             perror("Close failed");
+
+    pthread_cancel(terminal_thread);
+    pthread_cancel(token_handling_thread);
 }
