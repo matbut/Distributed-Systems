@@ -3,15 +3,14 @@ CFLAGS=-Wall -std=c11 -ggdb
 LIBFLAGS=-lpthread
 CLIENT=client
 
-$(CLIENT): $(CLIENT).c 
-	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $@ $(LIBFLAGS)
+$(CLIENT): $(CLIENT).c $(CLIENT).h
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(CLIENT).c -o $(CLIENT) $(LIBFLAGS)
 
 .PHONY: clean
 
 clean:
 	-rm -rf *.o $(CLIENT)
 
-tcp: $(CLIENT)
-	./$(CLIENT) janusz 192.168.0.61 8084 token TCP
+udp: $(CLIENT)
 
-	
+

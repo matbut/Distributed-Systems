@@ -1,249 +1,419 @@
 #define _XOPEN_SOURCE 700
 #define _DEFAULT_SOURCE
 
+#include <netinet/in.h>
+#include <pthread.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-#include <sys/types.h>
-#include <signal.h>
-#include <sys/wait.h>
-#include <math.h>
-#include <errno.h>
-#include <unistd.h>
-#include <sys/times.h>
-#include <sys/ioctl.h>
-#include <time.h>
-#include <pthread.h>
-#include <sys/socket.h>
-#include <sys/un.h>
-#include <endian.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
 #include <stdbool.h>
-#include "header.h"
+#include <string.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+
+#include "client.h"
 
 #define ERR(str) {perror(str); exit(EXIT_FAILURE);}
 #define MYERR(str) {printf(str); exit(EXIT_FAILURE);}
 
-int sock_type;
-bool has_token = false;
-char* my_name = NULL;
+int queue_first = 0;
+int queue_size = 0;
+token_t* queue[QUEUE_MAX_SIZE];
+pthread_mutex_t queue_mutex;
 
-struct sockaddr_in my_socket;
-int my_socket_fd = -1; 
+char my_name[NAME_SIZE];
+uint16_t my_port;
+char* neighbor_ip_addr;
+uint16_t neighbor_port;
+bool has_token ;
+uint16_t sock_type;
 
-struct sockaddr_in neighbor_socket;
-int neighbor_socket_fd = -1; 
+int socket_fd;
+struct sockaddr_in neighbor_addr;
 
-struct sockaddr_in receiver_socket;
-char* messagge;
-pthread_mutex_t messagge_mutex;
+int logger_socket_fd;
+struct sockaddr_in logger_addr;
 
 pthread_t token_handling_thread;
 pthread_t terminal_thread;
 
 void parse(int argc, char **argv);
-void configure_my_socket();
-void connect_neighbor_socket();
-void *terminal(void* args);
+int init_udp_socket(uint16_t port);
+void init_neighbor_addr(char* neighbor_ip_addr,uint16_t neighbor_port);
+void init_token_handling();
 void *token_handling(void* args);
+void *terminal(void* args);
 void sigint_handler(int signo);
 void clean_up();
 
-int main (int argc, char **argv){
+void receive_token(token_t *token,struct sockaddr_in *receive_addr);
+void send_token(token_t* token);
+void send_old_token(token_t* token);
+void send_new_token();
+void send_connect_token();
 
-    if(signal(SIGINT,sigint_handler)==SIG_ERR) ERR("signal SIGINT error");
+void init_logger_socket();
+void send_logger(token_t* token);
+
+void queue_switch_message(switch_t* switch_ptr);
+void queue_data_message(char receiver[], char *message);
+
+void queue_add(token_t* token);
+void queue_front_add(token_t* token);
+token_t* queue_poll();
+bool queue_is_empty();
+bool queue_is_full();
+
+int main(int argc, char **argv){
+
+  if(signal(SIGINT,sigint_handler)==SIG_ERR) ERR("signal SIGINT error");
 	if(atexit(clean_up)==-1) ERR("atexit error");
+  
+  parse(argc,argv);
+  socket_fd = init_udp_socket(my_port);
+  init_neighbor_addr(neighbor_ip_addr,neighbor_port);
+  init_logger_socket();
 
-    parse(argc,argv);
+  printf("Hi, I am %s\n",my_name);
 
-    configure_my_socket();
-    //connect_neighbor_socket();
-    printf("Hi, I am client %s\n",my_name);
-
-    sigset_t set;
-    int sig;
-    sigemptyset(&set);
-    sigaddset(&set, SIGINT);
-    pthread_sigmask(SIG_BLOCK, &set, NULL);
-    
-    if(pthread_create(&token_handling_thread,  NULL, token_handling, NULL)==-1) ERR("token handling pthread_create error");
-    if(pthread_create(&terminal_thread,  NULL, terminal, NULL)==-1) ERR("terminal pthread_create error");
-    
-    sigwait(&set, &sig); 
-    exit(EXIT_SUCCESS);
+  sigset_t set;
+  int sig;
+  sigemptyset(&set);
+  sigaddset(&set, SIGINT);
+  pthread_sigmask(SIG_BLOCK, &set, NULL);
+  
+  if(pthread_create(&token_handling_thread,  NULL, token_handling, NULL)==-1) ERR("token handling pthread_create error");
+  if(pthread_create(&terminal_thread,  NULL, terminal, NULL)==-1) ERR("terminal pthread_create error");
+  
+  sigwait(&set, &sig); 
+  exit(EXIT_SUCCESS);
 }
 
 void parse(int argc, char **argv){
-	if(argc != 6) MYERR("Incorrect number of arguments\n");
-    my_name = argv[1];
 
-    //prepare address structures
-    struct in_addr addr; 
-    memset(&addr, 0, sizeof(addr));
-    if(inet_pton(AF_INET, argv[2], &addr) < 0) ERR("Inet_pton failed") //przekształca podany jako string adres 	
+	if(argc != 7) MYERR("Incorrect number of arguments\n");
 
-	memset(&neighbor_socket, 0, sizeof(neighbor_socket));
-	neighbor_socket.sin_family = AF_INET;
-	neighbor_socket.sin_port = htons((uint16_t) atoi(argv[3]));
-	neighbor_socket.sin_addr = addr; 
-
-    has_token = strcmp(argv[4],"token") == 0;
-
-    if(strcmp(argv[5],"TCP") == 0){
-        sock_type = SOCK_STREAM;
-    }else if(strcmp(argv[5],"UDP") == 0){
-        sock_type = SOCK_DGRAM;
-    }else MYERR("Not supported protocol\n");
+  memcpy(my_name,argv[1],NAME_SIZE-1);
+  my_name[NAME_SIZE-1]='\0';
+  my_port = (uint16_t) atoi(argv[2]);
+  neighbor_ip_addr = argv[3];
+  neighbor_port = (uint16_t) atoi(argv[4]);
+  has_token = strcmp(argv[5],"token") == 0;
+  sock_type = (strcmp(argv[6],"TCP") == 0) ? SOCK_STREAM : SOCK_DGRAM;
 }
 
-void configure_my_socket(){
-	//create socket
-	if ((my_socket_fd = socket(AF_INET,sock_type,0)) == -1) ERR("Socket inet failed")
+int init_udp_socket(uint16_t port){
 
-	int flag=1;
-	if (setsockopt(my_socket_fd, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(int)) < 0) ERR("Setsockopt failed")
-	
-	//prepare address structures
-    struct in_addr addr; 
-    memset(&addr, 0, sizeof(addr));
-    addr.s_addr = INADDR_ANY; //any ip address
+  struct sockaddr_in serverAddr;
+  int socket_fd;
 
-	memset(&my_socket, 0, sizeof(my_socket));
-	my_socket.sin_family = AF_INET;
-	my_socket.sin_port = 0; //next available high port.
-	my_socket.sin_addr = addr; 
+  if((socket_fd = socket(AF_INET, SOCK_DGRAM, 0)) == -1) ERR("Socket inet failed");
 
-    if(bind(my_socket_fd,(struct sockaddr*) &my_socket, sizeof(struct sockaddr)) == -1) ERR("Bind inet failed")
+  serverAddr.sin_family = AF_INET;
+  serverAddr.sin_port = htons(port);
+  serverAddr.sin_addr.s_addr = htonl(INADDR_ANY); //inet_addr("127.0.0.1");
+  memset(serverAddr.sin_zero, '\0', sizeof serverAddr.sin_zero);  
 
-    if (sock_type == SOCK_STREAM)
-        if(listen(my_socket_fd, CLIENT_MAX) == -1) ERR("Listen inet failed")
+  if(bind(socket_fd, (struct sockaddr *) &serverAddr, sizeof(serverAddr)) == -1) ERR("Bind failed");
+
+  return socket_fd;
 }
 
-void connect_neighbor_socket(){
-    if ((neighbor_socket_fd = socket(AF_INET, sock_type, 0)) < 0) ERR("Socket inet failed")
-    if (connect(neighbor_socket_fd,(struct sockaddr*) &neighbor_socket, sizeof(struct sockaddr_in)) < 0) ERR("Connect failed")
+void init_neighbor_addr(char* neighbor_ip_addr,uint16_t neighbor_port){
+    neighbor_addr.sin_family = AF_INET;
+    neighbor_addr.sin_port = htons(neighbor_port);
+    neighbor_addr.sin_addr.s_addr = inet_addr(neighbor_ip_addr);
+    memset(neighbor_addr.sin_zero, '\0', sizeof neighbor_addr.sin_zero);  
 }
 
-void pass_token(token_t token, char* messagge){
-    sleep(1);
-    void *buff;
+void queue_front_add(token_t* token){
+  pthread_mutex_lock(&queue_mutex);
 
-    buff = malloc(sizeof(token_t) + token.msg_size);
-    memcpy(buff, &token, sizeof(token_t));
-    memcpy(buff+sizeof(token_t), messagge, token.msg_size);
-    
-    if (write(neighbor_socket_fd, buff, sizeof(token_t) + token.msg_size) < 0) 
-        MYERR("write error");
+  if(queue_size > QUEUE_MAX_SIZE)
+    MYERR("Queue is full!")
+
+  queue_first = (QUEUE_MAX_SIZE+queue_first-1)%QUEUE_MAX_SIZE;
+  queue[queue_first] = token;
+  queue_size++;
+
+  pthread_mutex_unlock(&queue_mutex);
 }
 
+void queue_add(token_t* token){
+  pthread_mutex_lock(&queue_mutex);
+
+  if(queue_size > QUEUE_MAX_SIZE)
+    MYERR("Queue is full!")
+
+  queue[(queue_first+queue_size)%QUEUE_MAX_SIZE] = token;
+  queue_size++;
+
+  pthread_mutex_unlock(&queue_mutex);
+}
+
+token_t* queue_poll(){
+  pthread_mutex_lock(&queue_mutex);
+  token_t* token = queue[queue_first];
+
+  queue_first = (queue_first+1)%QUEUE_MAX_SIZE;
+  queue_size--;
+
+  pthread_mutex_unlock(&queue_mutex);
+  return token;
+}
+
+bool queue_is_empty(){
+  pthread_mutex_lock(&queue_mutex);
+  bool returned = queue_size == 0;
+  pthread_mutex_unlock(&queue_mutex);
+  return returned;
+}
+
+bool queue_is_full(){
+  pthread_mutex_lock(&queue_mutex);
+  bool returned = queue_size >= QUEUE_MAX_SIZE;
+  pthread_mutex_unlock(&queue_mutex);
+  return returned;
+}
 
 void *terminal(void* args){
 	char* input = NULL;
-    size_t inputLength = 0;
-    char delimiter[] = " ";
+  size_t inputLength = 0;
 
-    while(1) {
-        if(getline(&input, &inputLength, stdin)==-1) ERR("getline error");
-        inputLength = strlen(input);
-        input[inputLength-1]='\0';  
+  char destination[NAME_SIZE];
+  char messagge[MESSAGE_SIZE];
+  while(1) {
+    printf("Enter destination:");
+    scanf("%6s",destination);
+    destination[6] = '\0';
 
-        char *context;
-    
-        char * ip_addr_str = strtok_r (input, delimiter, &context);
-        if (ip_addr_str == NULL || ip_addr_str[0] == '\0'){
-            printf("IP address is empty!\n");
-            continue;
-        }
-        char * port_str = strtok_r (NULL, delimiter, &context);
-        if (port_str == NULL || port_str[0] == '\0'){
-            printf("Port number is empty!\n");
-            continue;
-        }
-        
-        if (context == NULL || context[0] == '\0'){
-            printf("Messagge is empty!\n");
-            continue;
-        }
+    while ((getchar()) != '\n');
 
-        pthread_mutex_lock(&messagge_mutex);
+    printf("Enter message:");
+    scanf("%s", messagge);
+    while ((getchar()) != '\n');
 
-        //prepare address structures
-        struct in_addr addr; 
-        memset(&addr, 0, sizeof(addr));
-        if(inet_pton(AF_INET, ip_addr_str, &addr) != 1){
-            printf("IP address is not valid!\n");
-            pthread_mutex_unlock(&messagge_mutex);
-            continue;
-        }
-
-        memset(&receiver_socket, 0, sizeof(receiver_socket));
-        receiver_socket.sin_family = AF_INET;
-        receiver_socket.sin_port = htons((uint16_t) atoi(port_str));
-        receiver_socket.sin_addr = addr; 
-
-        messagge = context;
-        pthread_mutex_unlock(&messagge_mutex);
-
-        /*
-        printf("IP address: %s\n", ip_addr_str);
-        printf("Port: %s\n", port_str);
-        printf("Messagge: %s\n", messagge);
-        */
+    if(queue_is_full()){
+      printf("Please wait, message queue is full.\n");
+    }else{
+      printf("Enqueue messege to %s: %s\n",destination, messagge);
+      queue_data_message(destination,messagge);
     }
-   return (void *) 0;
+    //if(getline(&input, &inputLength, stdin)==-1) ERR("getline error");
+    //memcpy(token.msg ,input,NAME_SIZE);
+  }
+  return (void *) 0;
 }
 
-bool is_my_socket(struct sockaddr_in receiver){
-    //struct in_addr receiver_addr = (struct in_addr) receiver.sin_addr;
-    //struct in_addr my_addr = (struct in_addr) my_socket.sin_addr;
-    return ((receiver.sin_addr.s_addr == my_socket.sin_addr.s_addr) && (receiver.sin_family == my_socket.sin_family) && (receiver.sin_port == my_socket.sin_port));
+void send_connect_token(){
+  char* my_ip_addr = "127.0.0.1"; //TODO get my ip addr
+  switch_t* switch_ptr = malloc(sizeof(switch_t));
+  memcpy(switch_ptr->new_ip_addr,my_ip_addr,strlen(neighbor_ip_addr)); 
+  switch_ptr->new_port = my_port;
+  memcpy(switch_ptr->next_ip_addr,neighbor_ip_addr,strlen(neighbor_ip_addr));
+  switch_ptr->next_port = neighbor_port;
+
+  token_t* token = malloc(sizeof(token_t));
+  memcpy(token->msg,switch_ptr,sizeof(switch_t));
+  memcpy(token->msg_from,my_name,NAME_SIZE);
+  memcpy(token->msg_dest,UNKNOWN_NAME,NAME_SIZE);
+  token->msg_type = CONNECT;
+  send_token(token);
+}
+
+void init_token_handling(){
+  if(has_token){
+    neighbor_ip_addr = "127.0.0.1"; //my loopback;
+    neighbor_port = my_port;
+    init_neighbor_addr(neighbor_ip_addr,neighbor_port);
+    send_new_token();
+  }else{
+    send_connect_token();
+  }
 }
 
 void *token_handling(void* args){
-	char buff[CONTENT_MAX];
-    token_t token;
-    int len;
+
+  init_token_handling();
+
+  token_t token;
+  struct sockaddr_in receive_addr;
+  switch_t* switch_ptr = (switch_t*) &token.msg;
+
+  while(1){
+    receive_token(&token,&receive_addr);
+    //printf("Received token: %s from %s: %s\n",TO_STRING(token.msg_type),token.msg_from,token.msg);
     
-    while(1){
-        ioctl(my_socket_fd, FIONREAD, &len);
-        if (len <= 0){ 
-            continue;            
+    switch (token.msg_type)
+    {
+      case CONNECT:
+        queue_switch_message(switch_ptr);
+        break;
+      case SWITCH:
+        printf("%s vs %s\n",switch_ptr->next_ip_addr,neighbor_ip_addr);
+        printf("%hhu vs %hhu\n",switch_ptr->next_port,neighbor_port);
+        if(          
+          (strcmp(switch_ptr->next_ip_addr,neighbor_ip_addr) == 0) && 
+          switch_ptr->next_port == neighbor_port){
+            neighbor_ip_addr = switch_ptr->new_ip_addr;
+            neighbor_port = switch_ptr->new_port;
+            printf("change neighbor %s  %hhu\n",neighbor_ip_addr,neighbor_ip_addr);
+            init_neighbor_addr(neighbor_ip_addr,neighbor_port);
+            send_new_token();
+          }else{
+            send_old_token(&token);
+          }
+        break;
+      case DATA:
+        if(strcmp(my_name,token.msg_dest) == 0){
+          printf("\n!!!Received message: from %s: %s\n!!!",token.msg_from,token.msg);
+          send_new_token();
+        }else{  
+          send_old_token(&token);
         }
-
-        read(my_socket_fd, &token, sizeof(token_t));
-        read(my_socket_fd, buff, token.msg_size);
-
-        if(token.msg_size!=0){
-            
-            if(is_my_socket(token.receiver)){
-                printf("Messagge: %s",buff);
-            }else{
-                pass_token(token,buff);
-            }
-        }else{
-            pass_token(token,buff);
-            //TODO send messagge
-        }   
-    }
-    
-   return (void *) 0;
+        break;        
+      case EMPTY:
+        send_new_token();
+        break; 
+      default:
+        MYERR("Unknown message type");
+    }    
+  }
+  return (void *) 0;
 }
 
+void send_old_token(token_t* token){
+  --token->msg_ttl;
+  if(token->msg_ttl <= 0){
+    send_new_token();
+  }else{
+    token_t* token_ptr = malloc(sizeof(token_t));
+    memcpy(token_ptr,token,sizeof(token_t));
+    send_token(token_ptr); 
+  }
+}
+
+void send_new_token(){
+  token_t* token;
+  if(queue_is_empty()){
+    token = malloc(sizeof(token));
+    token->msg_type = EMPTY;
+  }else{
+    token = queue_poll();
+  }
+  send_token(token);
+
+  free(token);
+}
+
+void send_token(token_t* token){
+  char buffer[BUFFER_SIZE];
+  size_t len = sizeof(token_t);
+
+  memcpy(buffer, token, len);
+  sendto(socket_fd,buffer,len,0,(struct sockaddr *)&neighbor_addr,sizeof(neighbor_addr));
+}
+
+void receive_token(token_t *token,struct sockaddr_in *receive_addr){
+  char buffer[BUFFER_SIZE];
+  socklen_t addr_size;
+
+  int len = recvfrom(socket_fd,buffer,BUFFER_SIZE,0,(struct sockaddr *)receive_addr, &addr_size);
+
+  memcpy(token, buffer, sizeof(token_t));;
+  send_logger(token);
+  sleep(1);
+}
+
+void queue_switch_message(switch_t* switch_ptr){
+  token_t* token = malloc(sizeof(token_t));
+  memcpy(token->msg,switch_ptr,sizeof(switch_t));
+  memcpy(token->msg_from,my_name,NAME_SIZE);
+  memcpy(token->msg_dest,UNKNOWN_NAME,NAME_SIZE);
+  token->msg_ttl = START_TTL;
+  token->msg_type = SWITCH;
+  queue_front_add(token);
+}
+
+void queue_data_message(char receiver[], char *message){
+  token_t* token = malloc(sizeof(token_t));
+  memcpy(token->msg,message,NAME_SIZE);
+  memcpy(token->msg_from,my_name,NAME_SIZE);
+  memcpy(token->msg_dest,receiver,NAME_SIZE);
+  token->msg_ttl = START_TTL;
+  token->msg_type = DATA;
+  queue_add(token);
+}
 
 void sigint_handler(int signo){
 	exit(EXIT_FAILURE);
 }
 
 void clean_up(){
-	if(sock_type == SOCK_STREAM && my_socket_fd != -1){
-		if (shutdown(my_socket_fd, SHUT_RDWR)!=0)
-            perror("Shutdown failed");
-	}
-    if(my_socket_fd != -1) 
-        if (close(my_socket_fd))
+    if(socket_fd != -1) 
+        if (close(socket_fd))
             perror("Close failed");
 
-    pthread_cancel(terminal_thread);
+    //pthread_cancel(terminal_thread);
     pthread_cancel(token_handling_thread);
 }
+
+void init_logger_socket(){
+  if ((logger_socket_fd = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
+    ERR("Socket logger failed");
+
+  logger_addr.sin_family = AF_INET;
+  logger_addr.sin_port = htons(LOGGER_PORT);
+  logger_addr.sin_addr.s_addr = inet_addr(LOGGER_IP_ADDR);
+  memset(logger_addr.sin_zero, '\0', sizeof logger_addr.sin_zero); 
+}
+
+void send_logger(token_t* token){
+  char buffer[82];
+  sprintf(buffer,"%6s received token %7s from %6s to %6s with ttl %hhu",my_name,TO_STRING(token->msg_type),token->msg_from,token->msg_dest,token->msg_ttl);
+  //printf("%6s received token %7s from %6s to %6s with ttl %u\n",my_name,TO_STRING(token->msg_type),token->msg_from,token->msg_dest,token->msg_ttl);
+  if ((sendto(logger_socket_fd, buffer, strlen(buffer), 0, (struct sockaddr *) &logger_addr, sizeof(logger_addr))) < 0) 
+    ERR("Socket logger failed");
+}
+
+//  printf("empty: %d full: %d first: %d size: %d\n",queue_is_empty(),queue_is_full(),queue_first,queue_size);
+
+
+
+/*
+void queue_switch_message(struct sockaddr_in* sender){
+  queue_node_t queue_node;
+  queue_node.token.msg_type = SWITCH;
+  memcpy(queue_node.token.msg_receiver,my_name,MAX_NAME);
+  queue_node.token.msg_size = sizeof(sender);
+  queue_node.message = (char*) sender;
+  queue_add(queue_node);
+}
+
+void send_token(token_t *token,char* message){
+
+  char buffer[BUFFER_SIZE];
+
+  token->msg_size = strlen(message);
+  memcpy(buffer, token, sizeof(token_t));
+  memcpy(buffer+sizeof(token_t), message, token->msg_size);
+
+  int len = sizeof(token_t) + token->msg_size;
+
+  sleep(1);
+  sendto(socket_fd,buffer,len,0,(struct sockaddr *)&neighbor_addr,sizeof(struct sockaddr_in));
+}
+
+void receive_token(token_t *token,char* message,struct sockaddr_in *receive_addr){
+  
+  char buffer[BUFFER_SIZE];
+  socklen_t addr_size;
+
+  int len = recvfrom(socket_fd,buffer,BUFFER_SIZE,0,(struct sockaddr *)receive_addr, &addr_size);
+
+  send_logger();
+
+  memcpy(token, buffer, sizeof(token_t));
+  memcpy(message, buffer+sizeof(token_t), token->msg_size);
+}
+*/
