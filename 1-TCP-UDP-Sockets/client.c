@@ -27,6 +27,7 @@ uint16_t my_port;
 char* neighbor_ip_addr;
 uint16_t neighbor_port;
 bool has_token;
+bool fake_token;
 uint16_t sock_type;
 
 uint8_t my_pri = 0;
@@ -70,6 +71,8 @@ bool queue_is_full();
 
 int main(int argc, char **argv){
 
+  srand((unsigned) time(NULL));
+
   if(signal(SIGINT,sigint_handler)==SIG_ERR) ERR("signal SIGINT error");
 	if(atexit(clean_up)==-1) ERR("atexit error");
   
@@ -103,6 +106,7 @@ void parse(int argc, char **argv){
   neighbor_ip_addr = argv[3];
   neighbor_port = (uint16_t) atoi(argv[4]);
   has_token = strcmp(argv[5],"token") == 0;
+  fake_token = strcmp(argv[5],"fake") == 0;
   sock_type = (strcmp(argv[6],"TCP") == 0) ? SOCK_STREAM : SOCK_DGRAM;
 }
 
@@ -332,6 +336,21 @@ void send_new_token(){
   send_token();
 }
 
+void send_fake_token(){
+  char buffer[BUFFER_SIZE];
+  size_t len = sizeof(token_t);
+
+  token.id = 1;
+  token.max_met_pri = 0;
+  memcpy(token.msg_dest,"fake:)",NAME_SIZE);
+  memcpy(token.msg_from,my_name,NAME_SIZE);
+  token.msg_ttl = START_TTL;
+  token.msg_type = DATA;
+
+  memcpy(buffer, &token, len);
+  sendto(socket_fd,buffer,len,0,(struct sockaddr *)&neighbor_addr,sizeof(neighbor_addr));
+}
+
 void send_token(){
   char buffer[BUFFER_SIZE];
   size_t len = sizeof(token_t);
@@ -348,6 +367,11 @@ void send_token(){
   
   memcpy(buffer, &token, len);
   sendto(socket_fd,buffer,len,0,(struct sockaddr *)&neighbor_addr,sizeof(neighbor_addr));
+
+  sleep(1);
+
+  if(fake_token && rand()%FAKE==0)
+    send_fake_token();
 }
 
 void receive_token(struct sockaddr_in *receive_addr){
@@ -412,7 +436,7 @@ void init_logger_socket(){
 
 void send_logger(){
   char buffer[128];
-  sprintf(buffer,"%6s pri %3hhu received token %7s from %6s to %6s with ttl %2hhu met pri %3hhu id %3hhu",my_name,my_pri,TO_STRING(token.msg_type),token.msg_from,token.msg_dest,token.msg_ttl,token.max_met_pri,token.id);
+  sprintf(buffer,"%6s pri %3hhu id %3hhu received token %7s from %6s to %6s with ttl %2hhu met pri %3hhu id %3hhu",my_name,my_pri,token_id,TO_STRING(token.msg_type),token.msg_from,token.msg_dest,token.msg_ttl,token.max_met_pri,token.id);
   if ((sendto(logger_socket_fd, buffer, strlen(buffer), 0, (struct sockaddr *) &logger_addr, sizeof(logger_addr))) < 0) 
     ERR("Socket logger failed");
 }

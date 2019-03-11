@@ -12,6 +12,7 @@
 #define START_TTL 10
 #define PRI_MAX 250
 #define PRI_SWITCH 251
+#define FAKE 5
 
 #define LOGGER_PORT 8888
 #define LOGGER_IP_ADDR "224.1.1.1"
