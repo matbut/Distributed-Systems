@@ -16,6 +16,7 @@
 #define ERR(str) {perror(str); exit(EXIT_FAILURE);}
 #define MYERR(str) {printf(str); exit(EXIT_FAILURE);}
 
+token_t token;
 int queue_first = 0;
 int queue_size = 0;
 token_t* queue[QUEUE_MAX_SIZE];
@@ -49,14 +50,14 @@ void *terminal(void* args);
 void sigint_handler(int signo);
 void clean_up();
 
-void receive_token(token_t *token,struct sockaddr_in *receive_addr);
-void send_token(token_t* token);
-void send_old_token(token_t* token);
-void send_new_token(token_t* old_token);
+void receive_token(struct sockaddr_in *receive_addr);
+void send_token();
+void send_old_token();
+void send_new_token();
 void send_connect_token();
 
 void init_logger_socket();
-void send_logger(token_t* token);
+void send_logger();
 
 void queue_switch_message(switch_t* switch_ptr);
 void queue_data_message(char receiver[], char *message);
@@ -216,15 +217,15 @@ void send_connect_token(){
   memcpy(switch_ptr->next_ip_addr,neighbor_ip_addr,strlen(neighbor_ip_addr));
   switch_ptr->next_port = neighbor_port;
 
-  token_t* token = malloc(sizeof(token_t));
-  memcpy(token->msg,switch_ptr,sizeof(switch_t));
-  memcpy(token->msg_from,my_name,NAME_SIZE);
-  memcpy(token->msg_dest,UNKNOWN_NAME,NAME_SIZE);
-  token->msg_type = CONNECT;
-  token->id = 1;
-  token->msg_ttl = 1;
-  send_token(token);
-  free(token);
+  token.id = 1;
+  token.max_met_pri = 0;
+  memcpy(token.msg,switch_ptr,sizeof(switch_t));
+  memcpy(token.msg_dest,UNKNOWN_NAME,NAME_SIZE);
+  memcpy(token.msg_from,my_name,NAME_SIZE);
+  token.msg_ttl = 1;
+  token.msg_type = CONNECT;
+
+  send_token();
   free(switch_ptr);
 }
 
@@ -233,14 +234,15 @@ void init_token_handling(){
     neighbor_ip_addr = "127.0.0.1"; //my loopback;
     neighbor_port = my_port;
     init_neighbor_addr(neighbor_ip_addr,neighbor_port);
-    token_t token;
-    token.msg_type = EMPTY;
-    token.msg_ttl = 1;
+
+    token.id = 0;
     token.max_met_pri = 0;
-    token.id = 1;
-    memcpy(token.msg_dest,UNKNOWN_NAME,strlen(UNKNOWN_NAME));
-    memcpy(token.msg_from,UNKNOWN_NAME,strlen(UNKNOWN_NAME));
-    send_token(&token);
+    memcpy(token.msg_dest,UNKNOWN_NAME,NAME_SIZE);
+    memcpy(token.msg_from,my_name,NAME_SIZE);
+    token.msg_ttl = 1;
+    token.msg_type = EMPTY;
+
+    send_token();
   }else{
     send_connect_token();
   }
@@ -250,12 +252,11 @@ void *token_handling(void* args){
 
   init_token_handling();
 
-  token_t token;
   struct sockaddr_in receive_addr;
   switch_t* switch_ptr = (switch_t*) &token.msg;
 
   while(1){
-    receive_token(&token,&receive_addr);
+    receive_token(&receive_addr);
     
     switch (token.msg_type)
     {
@@ -270,21 +271,21 @@ void *token_handling(void* args){
             neighbor_port = switch_ptr->new_port;
             //printf("change neighbor %s  %hhu\n",neighbor_ip_addr,neighbor_ip_addr);
             init_neighbor_addr(neighbor_ip_addr,neighbor_port);
-            send_new_token(&token);
+            send_new_token();
           }else{
-            send_old_token(&token);
+            send_old_token();
           }
         break;
       case DATA:
         if(strcmp(my_name,token.msg_dest) == 0){
           printf("\n!!!Received message: from %s: %s!!!\n",token.msg_from,token.msg);
-          send_new_token(&token);
+          send_new_token();
         }else{  
-          send_old_token(&token);
+          send_old_token();
         }
         break;        
       case EMPTY:
-        send_new_token(&token);
+        send_new_token();
         break; 
       default:
         MYERR("Unknown message type");
@@ -293,51 +294,51 @@ void *token_handling(void* args){
   return (void *) 0;
 }
 
-void send_old_token(token_t* token){
-  --token->msg_ttl;
-  if(token->msg_ttl <= 0){
-    send_new_token(token);
+void send_old_token(){
+  --token.msg_ttl;
+  if(token.msg_ttl <= 0){
+    send_new_token();
   }else{
     if(!queue_is_empty())
       if(my_pri<PRI_MAX) my_pri++;
 
-    token_t* token_ptr = malloc(sizeof(token_t));
-    memcpy(token_ptr,token,sizeof(token_t));
-    send_token(token_ptr); 
+    send_token(); 
   }
 }
 
-void send_new_token(token_t* old_token){
-  token_t* token;
-  token = malloc(sizeof(token));
-  memcpy(token->msg_dest,UNKNOWN_NAME,strlen(UNKNOWN_NAME));
-  memcpy(token->msg_from,UNKNOWN_NAME,strlen(UNKNOWN_NAME));
-  token->msg_ttl = 1;
-  token->max_met_pri = old_token->max_met_pri;
-  token->id = old_token->id;
-  token->msg_type = EMPTY;
+void send_new_token(){
+
+  //token.id = 0; //keep old
+  //token.max_met_pri = 0; //keep old
+  memcpy(token.msg_dest,UNKNOWN_NAME,NAME_SIZE);
+  memcpy(token.msg_from,my_name,NAME_SIZE);
+  token.msg_ttl = 1;
+  token.msg_type = EMPTY;
+
+  uint8_t old_id = token.id;
 
   if(!queue_is_empty())
-    if(token->max_met_pri >= my_pri+1){
+    if(token.max_met_pri >= my_pri+1){
       if(my_pri<PRI_MAX) 
         my_pri++;
     }else{
-      token = queue_poll();
-      token->max_met_pri = my_pri = 0;
-      token->id = old_token->id;
-    }
-  send_token(token);
+      token_t* token_ptr = queue_poll();
+      memcpy(&token,token_ptr,sizeof(token_t));
+      free(token_ptr);
 
-  free(token);
+      token.max_met_pri = my_pri = 0;
+      token.id = old_id;
+    }
+  send_token();
 }
 
-void send_token(token_t* token){
+void send_token(){
   char buffer[BUFFER_SIZE];
   size_t len = sizeof(token_t);
 
   
-  if(token->max_met_pri < my_pri)
-    token->max_met_pri = my_pri;
+  if(token.max_met_pri < my_pri)
+    token.max_met_pri = my_pri;
 
   /*
   if(token->msg_type!=CONNECT && token->id %2 == 0){
@@ -348,42 +349,45 @@ void send_token(token_t* token){
   }else 
   */
 
-  memcpy(buffer, token, len);
+  memcpy(buffer, &token, len);
   sendto(socket_fd,buffer,len,0,(struct sockaddr *)&neighbor_addr,sizeof(neighbor_addr));
 }
 
-void receive_token(token_t *token,struct sockaddr_in *receive_addr){
+void receive_token(struct sockaddr_in *receive_addr){
   char buffer[BUFFER_SIZE];
   socklen_t addr_size;
 
   //do{
     int len = recvfrom(socket_fd,buffer,BUFFER_SIZE,0,(struct sockaddr *)receive_addr, &addr_size);
-    memcpy(token, buffer, sizeof(token_t));;
-    send_logger(token);
+    memcpy(&token, buffer, sizeof(token_t));;
+    send_logger();
   //}while((token->msg_type!=CONNECT) && (token_id != 0) && (token->id != token_id));
   
   sleep(1);
 }
 
 void queue_switch_message(switch_t* switch_ptr){
-  token_t* token = malloc(sizeof(token_t));
-  memcpy(token->msg,switch_ptr,sizeof(switch_t));
-  memcpy(token->msg_from,my_name,NAME_SIZE);
-  memcpy(token->msg_dest,UNKNOWN_NAME,NAME_SIZE);
-  token->msg_ttl = START_TTL;
-  token->msg_type = SWITCH;
-  queue_front_add(token);
+  token_t* token_ptr = malloc(sizeof(token_t));
+  //token_ptr->id = 0; //keep old
+  //token_ptr->max_met_pri = 0; //keep old
+  memcpy(token_ptr->msg,switch_ptr,sizeof(switch_t));
+  memcpy(token_ptr->msg_dest,UNKNOWN_NAME,NAME_SIZE);
+  memcpy(token_ptr->msg_from,my_name,NAME_SIZE);
+  token_ptr->msg_ttl = START_TTL;
+  token_ptr->msg_type = SWITCH;
+
+  queue_front_add(token_ptr);
   my_pri = PRI_SWITCH;
 }
 
 void queue_data_message(char receiver[], char *message){
-  token_t* token = malloc(sizeof(token_t));
-  memcpy(token->msg,message,NAME_SIZE);
-  memcpy(token->msg_from,my_name,NAME_SIZE);
-  memcpy(token->msg_dest,receiver,NAME_SIZE);
-  token->msg_ttl = START_TTL;
-  token->msg_type = DATA;
-  queue_add(token);
+  token_t* token_ptr = malloc(sizeof(token_t));
+  memcpy(token_ptr->msg,message,strlen(message));
+  memcpy(token_ptr->msg_dest,receiver,NAME_SIZE);
+  memcpy(token_ptr->msg_from,my_name,NAME_SIZE);
+  token_ptr->msg_ttl = START_TTL;
+  token_ptr->msg_type = DATA;
+  queue_add(token_ptr);
 }
 
 void sigint_handler(int signo){
@@ -409,9 +413,9 @@ void init_logger_socket(){
   memset(logger_addr.sin_zero, '\0', sizeof logger_addr.sin_zero); 
 }
 
-void send_logger(token_t* token){
+void send_logger(){
   char buffer[128];
-  sprintf(buffer,"%6s pri %3hhu received token %7s from %6s to %6s with ttl %2hhu met pri %3hhu id %3hhu",my_name,my_pri,TO_STRING(token->msg_type),token->msg_from,token->msg_dest,token->msg_ttl,token->max_met_pri,token->id);
+  sprintf(buffer,"%6s pri %3hhu received token %7s from %6s to %6s with ttl %2hhu met pri %3hhu id %3hhu",my_name,my_pri,TO_STRING(token.msg_type),token.msg_from,token.msg_dest,token.msg_ttl,token.max_met_pri,token.id);
   if ((sendto(logger_socket_fd, buffer, strlen(buffer), 0, (struct sockaddr *) &logger_addr, sizeof(logger_addr))) < 0) 
     ERR("Socket logger failed");
 }
