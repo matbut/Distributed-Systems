@@ -26,11 +26,11 @@ char my_name[NAME_SIZE];
 uint16_t my_port;
 char* neighbor_ip_addr;
 uint16_t neighbor_port;
-bool has_token ;
+bool has_token;
 uint16_t sock_type;
 
 uint8_t my_pri = 0;
-//uint8_t token_id = 0;
+uint8_t token_id = 0;
 
 int socket_fd;
 struct sockaddr_in neighbor_addr;
@@ -336,19 +336,16 @@ void send_token(){
   char buffer[BUFFER_SIZE];
   size_t len = sizeof(token_t);
 
-  
   if(token.max_met_pri < my_pri)
     token.max_met_pri = my_pri;
 
-  /*
-  if(token->msg_type!=CONNECT && token->id %2 == 0){
-    token_id = ++token->id;
-  }else if((token->msg_type!=CONNECT && token_id != 0)){
+  if(token.msg_type!=CONNECT && token.id %2 == 0){
+    token_id = ++token.id;
+  }else if((token.msg_type!=CONNECT && token_id != 0)){
     token_id = 0;
-    ++token->id;
-  }else 
-  */
-
+    ++token.id;
+  }
+  
   memcpy(buffer, &token, len);
   sendto(socket_fd,buffer,len,0,(struct sockaddr *)&neighbor_addr,sizeof(neighbor_addr));
 }
@@ -357,11 +354,11 @@ void receive_token(struct sockaddr_in *receive_addr){
   char buffer[BUFFER_SIZE];
   socklen_t addr_size;
 
-  //do{
+  do{
     int len = recvfrom(socket_fd,buffer,BUFFER_SIZE,0,(struct sockaddr *)receive_addr, &addr_size);
     memcpy(&token, buffer, sizeof(token_t));;
     send_logger();
-  //}while((token->msg_type!=CONNECT) && (token_id != 0) && (token->id != token_id));
+  }while((token.msg_type!=CONNECT) && (token_id != 0) && (token.id != token_id));
   
   sleep(1);
 }
