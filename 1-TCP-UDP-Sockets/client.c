@@ -28,6 +28,9 @@ uint16_t neighbor_port;
 bool has_token ;
 uint16_t sock_type;
 
+uint8_t my_pri = 0;
+//uint8_t token_id = 0;
+
 int socket_fd;
 struct sockaddr_in neighbor_addr;
 
@@ -49,7 +52,7 @@ void clean_up();
 void receive_token(token_t *token,struct sockaddr_in *receive_addr);
 void send_token(token_t* token);
 void send_old_token(token_t* token);
-void send_new_token();
+void send_new_token(token_t* old_token);
 void send_connect_token();
 
 void init_logger_socket();
@@ -218,7 +221,11 @@ void send_connect_token(){
   memcpy(token->msg_from,my_name,NAME_SIZE);
   memcpy(token->msg_dest,UNKNOWN_NAME,NAME_SIZE);
   token->msg_type = CONNECT;
+  token->id = 1;
+  token->msg_ttl = 1;
   send_token(token);
+  free(token);
+  free(switch_ptr);
 }
 
 void init_token_handling(){
@@ -226,7 +233,14 @@ void init_token_handling(){
     neighbor_ip_addr = "127.0.0.1"; //my loopback;
     neighbor_port = my_port;
     init_neighbor_addr(neighbor_ip_addr,neighbor_port);
-    send_new_token();
+    token_t token;
+    token.msg_type = EMPTY;
+    token.msg_ttl = 1;
+    token.max_met_pri = 0;
+    token.id = 1;
+    memcpy(token.msg_dest,UNKNOWN_NAME,strlen(UNKNOWN_NAME));
+    memcpy(token.msg_from,UNKNOWN_NAME,strlen(UNKNOWN_NAME));
+    send_token(&token);
   }else{
     send_connect_token();
   }
@@ -242,7 +256,6 @@ void *token_handling(void* args){
 
   while(1){
     receive_token(&token,&receive_addr);
-    //printf("Received token: %s from %s: %s\n",TO_STRING(token.msg_type),token.msg_from,token.msg);
     
     switch (token.msg_type)
     {
@@ -250,30 +263,28 @@ void *token_handling(void* args){
         queue_switch_message(switch_ptr);
         break;
       case SWITCH:
-        printf("%s vs %s\n",switch_ptr->next_ip_addr,neighbor_ip_addr);
-        printf("%hhu vs %hhu\n",switch_ptr->next_port,neighbor_port);
-        if(          
+        if(  /* to me */
           (strcmp(switch_ptr->next_ip_addr,neighbor_ip_addr) == 0) && 
-          switch_ptr->next_port == neighbor_port){
+          switch_ptr->next_port == neighbor_port){ 
             neighbor_ip_addr = switch_ptr->new_ip_addr;
             neighbor_port = switch_ptr->new_port;
-            printf("change neighbor %s  %hhu\n",neighbor_ip_addr,neighbor_ip_addr);
+            //printf("change neighbor %s  %hhu\n",neighbor_ip_addr,neighbor_ip_addr);
             init_neighbor_addr(neighbor_ip_addr,neighbor_port);
-            send_new_token();
+            send_new_token(&token);
           }else{
             send_old_token(&token);
           }
         break;
       case DATA:
         if(strcmp(my_name,token.msg_dest) == 0){
-          printf("\n!!!Received message: from %s: %s\n!!!",token.msg_from,token.msg);
-          send_new_token();
+          printf("\n!!!Received message: from %s: %s!!!\n",token.msg_from,token.msg);
+          send_new_token(&token);
         }else{  
           send_old_token(&token);
         }
         break;        
       case EMPTY:
-        send_new_token();
+        send_new_token(&token);
         break; 
       default:
         MYERR("Unknown message type");
@@ -285,22 +296,36 @@ void *token_handling(void* args){
 void send_old_token(token_t* token){
   --token->msg_ttl;
   if(token->msg_ttl <= 0){
-    send_new_token();
+    send_new_token(token);
   }else{
+    if(!queue_is_empty())
+      if(my_pri<PRI_MAX) my_pri++;
+
     token_t* token_ptr = malloc(sizeof(token_t));
     memcpy(token_ptr,token,sizeof(token_t));
     send_token(token_ptr); 
   }
 }
 
-void send_new_token(){
+void send_new_token(token_t* old_token){
   token_t* token;
-  if(queue_is_empty()){
-    token = malloc(sizeof(token));
-    token->msg_type = EMPTY;
-  }else{
-    token = queue_poll();
-  }
+  token = malloc(sizeof(token));
+  memcpy(token->msg_dest,UNKNOWN_NAME,strlen(UNKNOWN_NAME));
+  memcpy(token->msg_from,UNKNOWN_NAME,strlen(UNKNOWN_NAME));
+  token->msg_ttl = 1;
+  token->max_met_pri = old_token->max_met_pri;
+  token->id = old_token->id;
+  token->msg_type = EMPTY;
+
+  if(!queue_is_empty())
+    if(token->max_met_pri >= my_pri+1){
+      if(my_pri<PRI_MAX) 
+        my_pri++;
+    }else{
+      token = queue_poll();
+      token->max_met_pri = my_pri = 0;
+      token->id = old_token->id;
+    }
   send_token(token);
 
   free(token);
@@ -310,6 +335,19 @@ void send_token(token_t* token){
   char buffer[BUFFER_SIZE];
   size_t len = sizeof(token_t);
 
+  
+  if(token->max_met_pri < my_pri)
+    token->max_met_pri = my_pri;
+
+  /*
+  if(token->msg_type!=CONNECT && token->id %2 == 0){
+    token_id = ++token->id;
+  }else if((token->msg_type!=CONNECT && token_id != 0)){
+    token_id = 0;
+    ++token->id;
+  }else 
+  */
+
   memcpy(buffer, token, len);
   sendto(socket_fd,buffer,len,0,(struct sockaddr *)&neighbor_addr,sizeof(neighbor_addr));
 }
@@ -318,10 +356,12 @@ void receive_token(token_t *token,struct sockaddr_in *receive_addr){
   char buffer[BUFFER_SIZE];
   socklen_t addr_size;
 
-  int len = recvfrom(socket_fd,buffer,BUFFER_SIZE,0,(struct sockaddr *)receive_addr, &addr_size);
-
-  memcpy(token, buffer, sizeof(token_t));;
-  send_logger(token);
+  //do{
+    int len = recvfrom(socket_fd,buffer,BUFFER_SIZE,0,(struct sockaddr *)receive_addr, &addr_size);
+    memcpy(token, buffer, sizeof(token_t));;
+    send_logger(token);
+  //}while((token->msg_type!=CONNECT) && (token_id != 0) && (token->id != token_id));
+  
   sleep(1);
 }
 
@@ -333,6 +373,7 @@ void queue_switch_message(switch_t* switch_ptr){
   token->msg_ttl = START_TTL;
   token->msg_type = SWITCH;
   queue_front_add(token);
+  my_pri = PRI_SWITCH;
 }
 
 void queue_data_message(char receiver[], char *message){
@@ -354,7 +395,7 @@ void clean_up(){
         if (close(socket_fd))
             perror("Close failed");
 
-    //pthread_cancel(terminal_thread);
+    pthread_cancel(terminal_thread);
     pthread_cancel(token_handling_thread);
 }
 
@@ -369,9 +410,8 @@ void init_logger_socket(){
 }
 
 void send_logger(token_t* token){
-  char buffer[82];
-  sprintf(buffer,"%6s received token %7s from %6s to %6s with ttl %hhu",my_name,TO_STRING(token->msg_type),token->msg_from,token->msg_dest,token->msg_ttl);
-  //printf("%6s received token %7s from %6s to %6s with ttl %u\n",my_name,TO_STRING(token->msg_type),token->msg_from,token->msg_dest,token->msg_ttl);
+  char buffer[128];
+  sprintf(buffer,"%6s pri %3hhu received token %7s from %6s to %6s with ttl %2hhu met pri %3hhu id %3hhu",my_name,my_pri,TO_STRING(token->msg_type),token->msg_from,token->msg_dest,token->msg_ttl,token->max_met_pri,token->id);
   if ((sendto(logger_socket_fd, buffer, strlen(buffer), 0, (struct sockaddr *) &logger_addr, sizeof(logger_addr))) < 0) 
     ERR("Socket logger failed");
 }

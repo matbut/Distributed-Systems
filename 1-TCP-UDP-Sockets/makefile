@@ -12,5 +12,5 @@ clean:
 	-rm -rf *.o $(CLIENT)
 
 udp: $(CLIENT)
-
+	./client janusz 7893 127.0.0.1 7894 token UDP
 

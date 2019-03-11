@@ -2,8 +2,9 @@
 Celem zadania jest napisanie aplikacji w języku C lub C++, która pozwoli użytkownikom na przesyłanie (nadawanie i wyświetlanie) informacji bez wykorzystania serwera centralnego poprzez logiczną symulację architektury token ring. 
 
 ### Parametry:
-Każdy klient podczas uruchomienia otrzymuje cztery argumenty:
+Każdy klient podczas uruchomienia otrzymuje pięć argumentów:
 - tekstowy identyfikator użytkownika,
+- port na którym dany klient nasłuchuje,
 - adres IP i port sąsiada, do którego przekazywane będą wiadomości,
 - informacja o tym, czy dany użytkownik po uruchomieniu posiada token,
 - wybrany protokół: tcp lub udp.

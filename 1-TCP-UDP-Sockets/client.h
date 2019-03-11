@@ -6,10 +6,12 @@
 
 #define QUEUE_MAX_SIZE 10
 #define NAME_SIZE 7
-#define UNKNOWN_NAME "unknow"
+#define UNKNOWN_NAME "?     "
 #define BUFFER_SIZE 1024
 #define MESSAGE_SIZE 50
 #define START_TTL 10
+#define PRI_MAX 250
+#define PRI_SWITCH 251
 
 #define LOGGER_PORT 8888
 #define LOGGER_IP_ADDR "224.1.1.1"
@@ -26,14 +28,16 @@ typedef enum message_t {
     type == CONNECT ? "CONNECT" : ( \
     type == SWITCH ? "SWITCH" : ( \
     type == DATA ? "DATA" : ( \
-    type == EMPTY ? "EMPTY" : "UNKNOWN" \
+    type == EMPTY ? "EMPTY" : "?" \
     ))))
 
 typedef struct token_t{
+    uint8_t id;
+    uint8_t max_met_pri;
     uint8_t msg_ttl;
+    message_t msg_type;
     char msg_dest[NAME_SIZE];
     char msg_from[NAME_SIZE];
-    message_t msg_type;
     char msg[MESSAGE_SIZE];
 } token_t;
 
