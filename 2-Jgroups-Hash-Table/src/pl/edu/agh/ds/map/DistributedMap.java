@@ -8,9 +8,9 @@ public class DistributedMap implements SimpleStringMap {
 
     private final MapCommunication mapCommunication;
 
-    public DistributedMap() throws Exception{
+    public DistributedMap(String IPAddress) throws Exception{
         hashMap = new ConcurrentHashMap<>();
-        mapCommunication = new MapCommunication(hashMap,"230.100.200.17");
+        mapCommunication = new MapCommunication(hashMap,IPAddress);
     }
 
     @Override
@@ -33,5 +33,15 @@ public class DistributedMap implements SimpleStringMap {
         Integer value = get(key);
         mapCommunication.removeUpdate(key);
         return value;
+    }
+
+    @Override
+    public void discard() throws Exception{
+        mapCommunication.discard();
+    }
+
+    @Override
+    public void resume() throws Exception{
+        mapCommunication.resume();
     }
 }

@@ -9,4 +9,8 @@ public interface SimpleStringMap {
     void put(String key, Integer value) throws Exception;
 
     Integer remove(String key) throws Exception;
+
+    void discard() throws Exception;
+
+    void resume() throws Exception;
 }

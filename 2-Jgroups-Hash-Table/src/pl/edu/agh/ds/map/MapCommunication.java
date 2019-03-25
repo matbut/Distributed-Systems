@@ -1,21 +1,12 @@
 package pl.edu.agh.ds.map;
 
-
 import org.jgroups.JChannel;
 import org.jgroups.Message;
-import org.jgroups.ReceiverAdapter;
-import org.jgroups.View;
 import org.jgroups.protocols.*;
 import org.jgroups.protocols.pbcast.*;
 import org.jgroups.stack.ProtocolStack;
-import org.jgroups.util.Util;
 
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.net.InetAddress;
-import java.util.HashMap;
 import java.util.concurrent.ConcurrentHashMap;
 
 class MapCommunication {
@@ -38,7 +29,7 @@ class MapCommunication {
         mapsChannel.setProtocolStack(stack);
         stack.addProtocol(new UDP().setValue("mcast_group_addr",InetAddress.getByName(IPAddress)))
                 .addProtocol(new PING())
-                .addProtocol(new MERGE3())
+                .addProtocol(new MERGE3().setValue("max_interval",2000))
                 .addProtocol(new FD_SOCK())
                 .addProtocol(new FD_ALL()
                         .setValue("timeout", 12000)
@@ -81,5 +72,18 @@ class MapCommunication {
         mapsChannel.send(msg);
     }
 
+    public void discard() throws Exception {
+        ProtocolStack stack = mapsChannel.getProtocolStack();
+        stack.addProtocol(new DISCARD().setDiscardAll(true));
+        mapsChannel.setProtocolStack(stack);
+        stack.init();
+    }
+
+    public void resume() throws Exception {
+        ProtocolStack stack = mapsChannel.getProtocolStack();
+        stack.removeProtocol(DISCARD.class);
+        mapsChannel.setProtocolStack(stack);
+        stack.init();
+    }
 }
 
