@@ -37,6 +37,8 @@ public class ConsoleApp {
 
         try(BufferedReader reader = new BufferedReader(inp)){
             for (boolean c = true; c; c = !msg.equals("exit")) {
+                System.out.print("> ");
+                System.out.flush();
                 msg = reader.readLine();
                 parseCommand(msg);
             }

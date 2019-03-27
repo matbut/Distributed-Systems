@@ -24,7 +24,6 @@ public class Receiver extends ReceiverAdapter {
     public void viewAccepted(View view) {
         System.out.println("[COMUNICATION]received view " + view);
         if (view instanceof MergeView) {
-            System.out.println("[COMUNICATION]MergeView!");
             ViewHandler handler = new ViewHandler(mapsChannel, (MergeView) view);
             handler.start();
         }
@@ -32,13 +31,15 @@ public class Receiver extends ReceiverAdapter {
 
     @Override
     public void getState(OutputStream output) throws Exception{
+        System.out.println("[COMUNICATION] Get map state");
         Util.objectToStream(hashMap, new DataOutputStream(output));
     }
 
     @Override
     public void setState(InputStream input) throws Exception{
+        ConcurrentHashMap<String, Integer> newHashMap = (ConcurrentHashMap<String, Integer>) Util.objectFromStream(new DataInputStream(input));
         hashMap.clear();
-        hashMap.putAll((ConcurrentHashMap<String, Integer>) Util.objectFromStream(new DataInputStream(input)));
+        hashMap.putAll(newHashMap);
         System.out.println("[COMUNICATION] Update map state, " + hashMap.size() + " values added");
     }
 
@@ -61,27 +62,27 @@ public class Receiver extends ReceiverAdapter {
     }
 
     private static class ViewHandler extends Thread {
-        JChannel ch;
+        JChannel channel;
         MergeView view;
 
         private ViewHandler(JChannel ch, MergeView view) {
-            this.ch = ch;
+            this.channel = ch;
             this.view = view;
         }
 
         public void run() {
-            View tmp_view = view.getSubgroups().get(0);
-            Address local_addr = ch.getAddress();
-            if (!tmp_view.getMembers().contains(local_addr)) {
+            View temporaryView = view.getSubgroups().get(0);
+            Address localAddress = channel.getAddress();
+            if (!temporaryView.getMembers().contains(localAddress)) {
                 System.out.println("[COMUNICATION]Not member of the new primary partition ("
-                        + tmp_view + "), will re-acquire the state");
+                        + temporaryView + "), will re-acquire the state");
                 try {
-                    ch.getState(null, 30000);
+                    channel.getState(null, 1000);
                 } catch (Exception ignored) {
                 }
             } else {
                 System.out.println("[COMUNICATION]Not member of the new primary partition ("
-                        + tmp_view + "), will do nothing");
+                        + temporaryView + "), will do nothing");
             }
         }
     }

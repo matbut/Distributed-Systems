@@ -11,9 +11,11 @@ import java.util.concurrent.ConcurrentHashMap;
 
 class MapCommunication {
 
+
     private final JChannel mapsChannel;
 
     private final ConcurrentHashMap<String, Integer> hashMap;
+    private  final String groupName = "operation";
 
     private final String IPAddress;
 
@@ -27,29 +29,26 @@ class MapCommunication {
     private void init() throws Exception{
         ProtocolStack stack=new ProtocolStack();
         mapsChannel.setProtocolStack(stack);
-        stack.addProtocol(new UDP().setValue("mcast_group_addr",InetAddress.getByName(IPAddress)))
+        stack.addProtocol(new UDP().setValue("mcast_group_addr", InetAddress.getByName(IPAddress)))
                 .addProtocol(new PING())
                 .addProtocol(new MERGE3().setValue("max_interval",2000))
                 .addProtocol(new FD_SOCK())
-                .addProtocol(new FD_ALL()
-                        .setValue("timeout", 12000)
-                        .setValue("interval", 3000))
+                .addProtocol(new FD_ALL().setValue("timeout", 12000).setValue("interval", 3000))
                 .addProtocol(new VERIFY_SUSPECT())
                 .addProtocol(new BARRIER())
                 .addProtocol(new NAKACK2())
                 .addProtocol(new UNICAST3())
                 .addProtocol(new STABLE())
-                .addProtocol(new STATE())
                 .addProtocol(new GMS())
                 .addProtocol(new UFC())
                 .addProtocol(new MFC())
-                .addProtocol(new FRAG2());
+                .addProtocol(new FRAG2())
+                .addProtocol(new STATE_TRANSFER())
+                .addProtocol(new FLUSH());
 
         stack.init();
-        mapsChannel.connect("operation");
-
         mapsChannel.setReceiver( new Receiver(mapsChannel,hashMap));
-
+        mapsChannel.connect(groupName);
         mapsChannel.getState(null, 1000);
     }
 
@@ -74,16 +73,13 @@ class MapCommunication {
 
     public void discard() throws Exception {
         ProtocolStack stack = mapsChannel.getProtocolStack();
-        stack.addProtocol(new DISCARD().setDiscardAll(true));
-        mapsChannel.setProtocolStack(stack);
-        stack.init();
+        stack.insertProtocol(new DISCARD().setDiscardAll(true), ProtocolStack.BELOW, "MERGE3");
     }
 
     public void resume() throws Exception {
         ProtocolStack stack = mapsChannel.getProtocolStack();
         stack.removeProtocol(DISCARD.class);
         mapsChannel.setProtocolStack(stack);
-        stack.init();
     }
 }
 
