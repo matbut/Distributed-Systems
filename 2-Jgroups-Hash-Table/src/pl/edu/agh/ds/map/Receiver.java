@@ -77,7 +77,7 @@ public class Receiver extends ReceiverAdapter {
                 System.out.println("[COMUNICATION]Not member of the new primary partition ("
                         + temporaryView + "), will re-acquire the state");
                 try {
-                    channel.getState(null, 1000);
+                    channel.getState(null, 10000);
                 } catch (Exception ignored) {
                 }
             } else {
