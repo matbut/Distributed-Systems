@@ -4,17 +4,19 @@ import java.util.UUID
 
 import com.rabbitmq.client.AMQP.BasicProperties
 import com.rabbitmq.client._
-import pl.edu.agh.ds.rabbitmq.Technician.{channel, exchangeName}
+import pl.edu.agh.ds.rabbitmq.Technician.{channel, examinationExchange}
 
 abstract class Staff(val name:String) extends App{
 
-  protected val exchangeName = "ExaminationsExchange"
+  protected val examinationExchange = "ExaminationsExchange"
+  protected val logInfoExchange = "LogInfoExchange"
 
   protected val factory = new ConnectionFactory
   factory.setHost("localhost")
   protected val connection:Connection = factory.newConnection
   protected val channel:Channel = connection.createChannel
-  channel.exchangeDeclare(exchangeName, "topic")
+  channel.exchangeDeclare(examinationExchange, "direct")
+  channel.exchangeDeclare(logInfoExchange, "topic")
 
   println(name)
 
@@ -30,7 +32,7 @@ abstract class Staff(val name:String) extends App{
 
   Injury.values.foreach(injury => {
     channel.queueDeclare(injury.queueName,false,false,false,null)
-    channel.queueBind(injury.queueName, exchangeName, injury.routingKey)
+    channel.queueBind(injury.queueName, examinationExchange, injury.routingKey)
     channel.basicQos(1)
   })
 }

@@ -6,7 +6,7 @@ object Technician extends Staff("Technician"){
 
   private val specializationsNumber = 2
 
-  channel.queueBind(replyQueueName, exchangeName, Info.routingKey)
+  channel.queueBind(replyQueueName, logInfoExchange, Info.routingKey)
 
   try{
     1.to(specializationsNumber).foreach(i => {
@@ -27,7 +27,7 @@ object Technician extends Staff("Technician"){
         val results = ExaminationResult(surname,injury," is broken")
         val log = Log(results)
         channel.basicPublish("", delivery.getProperties.getReplyTo, props, Serialization.toByteArray(results))
-        channel.basicPublish(exchangeName, log.routingKey, props, Serialization.toByteArray(log))
+        channel.basicPublish(logInfoExchange, log.routingKey, props, Serialization.toByteArray(log))
         println("Sent: " + results)
     }
     channel.basicAck(delivery.getEnvelope.getDeliveryTag, false)
