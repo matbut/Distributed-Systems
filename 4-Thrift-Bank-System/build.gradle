@@ -1,0 +1,40 @@
+plugins {
+    id 'java'
+}
+
+group 'ThriftBankSystem'
+version '1.0-SNAPSHOT'
+
+sourceCompatibility = 1.8
+
+repositories {
+    mavenCentral()
+}
+
+sourceSets {
+    main {
+        java {
+            srcDir 'src/main/java'
+            srcDir 'generated'
+        }
+    }
+}
+
+dependencies {
+    testCompile group: 'junit', name: 'junit', version: '4.12'
+    compile group: 'org.slf4j', name: 'slf4j-api', version: '1.7.25'
+    compile group: 'org.slf4j', name: 'slf4j-jdk14', version: '1.7.25'
+    compile group: 'com.zeroc', name: 'ice', version: '3.7.2'
+
+    compile group: 'com.google.protobuf', name: 'protobuf-java', version:'3.7.1'
+    compile group: 'com.google.guava', name: 'guava', version: '27.1-jre'
+
+    compile group: 'io.grpc', name: 'grpc-context', version: '1.20.0'
+    compile group: 'io.grpc', name: 'grpc-netty', version: '1.20.0'
+    compile group: 'io.grpc', name: 'grpc-protobuf', version: '1.20.0'
+    compile group: 'io.grpc', name: 'grpc-stub', version: '1.20.0'
+    compile group: 'io.grpc', name: 'grpc-core', version: '1.20.0'
+    compile group: 'io.grpc', name: 'grpc-protobuf-lite', version: '1.20.0'
+    compile group: 'com.google.instrumentation', name:'instrumentation-api', version: '0.4.3'
+    compile group: 'io.netty', name: 'netty-all', version: '4.1.35.Final'
+}
