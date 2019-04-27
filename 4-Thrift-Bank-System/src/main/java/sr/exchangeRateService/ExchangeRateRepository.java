@@ -49,6 +49,7 @@ public class ExchangeRateRepository {
     private ExchangeRate randomUpdate(ExchangeRate exchangeRate) {
         double buyRatio = MIN_UPDATE_RATIO + Math.random() * (MAX_UPDATE_RATIO - MIN_UPDATE_RATIO);
         double buyRate = exchangeRate.getBuy()*buyRatio;
+
         return ExchangeRate
                 .newBuilder(exchangeRate)
                 .setBuy(buyRate)

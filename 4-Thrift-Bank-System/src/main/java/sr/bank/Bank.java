@@ -4,13 +4,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import sr.middleware.proto.Currency;
 import sr.middleware.proto.CurrencyCollection;
-import sr.middleware.proto.ExchangeRateCollection;
 
 import java.util.Arrays;
-import java.util.List;
 import java.util.Locale;
-
-import static sr.middleware.proto.Currency.*;
+import java.util.stream.Collectors;
 
 public class Bank {
 
@@ -24,7 +21,7 @@ public class Bank {
 
     public static void main(String[] args){
         Bank bank = parseArgs(args);
-        log.info("Bank started");
+        log.info("Bank has started" + bank.toString());
     }
 
     private static Bank parseArgs(String[] args) {
@@ -50,5 +47,10 @@ public class Bank {
 
         ExchangeRateStorage exchangeRateStorage = new ExchangeRateStorage(currencyCollection);
         new Thread(exchangeRateStorage).start();
+    }
+
+    @Override
+    public String toString() {
+        return "\n  Address: " + host + ':' + port + "\n  " + currencyCollection.getCurrencyList().stream().map(Currency::toString).collect(Collectors.joining(", ", "Currencies: ",""));
     }
 }

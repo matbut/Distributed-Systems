@@ -31,6 +31,8 @@ public class ExchangeRateServerImpl extends ExchangeRateServiceGrpc.ExchangeRate
             // Use responseObserver to send a single response back
             responseObserver.onNext(exchangeRateCollection);
 
+            exchangeRateRepository.updateAll();
+
             try {
                 Thread.sleep(REFRESH_TIME_MS);
             } catch (InterruptedException e) {

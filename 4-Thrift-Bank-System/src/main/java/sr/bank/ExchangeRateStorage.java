@@ -9,8 +9,9 @@ import sr.middleware.proto.*;
 
 import java.util.EnumMap;
 import java.util.Iterator;
-import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
+
 
 public class ExchangeRateStorage implements Runnable {
 
@@ -20,37 +21,36 @@ public class ExchangeRateStorage implements Runnable {
 
     private static final Logger log = LoggerFactory.getLogger(ExchangeRateStorage.class);
 
-    private Map<Currency, ExchangeRate> exchangeRates = new EnumMap<Currency, ExchangeRate>(Currency.class);
+    private Map<Currency, ExchangeRate> exchangeRates = new EnumMap<>(Currency.class);
 
-    private ExchangeRateServiceGrpc.ExchangeRateServiceBlockingStub currencyServiceBlockingStub;
-
-    private final CurrencyCollection currencyCollection;
+    private Iterator<ExchangeRateCollection> exchangeRateIterator;
 
     public ExchangeRateStorage(CurrencyCollection currencyCollection) {
-        this.currencyCollection = currencyCollection;
-
         ManagedChannel channel = ManagedChannelBuilder.forAddress(SERVER_HOST, SERVER_PORT)
                 .usePlaintext(true)
                 .build();
-        currencyServiceBlockingStub = ExchangeRateServiceGrpc.newBlockingStub(channel);
+
+        ExchangeRateServiceGrpc.ExchangeRateServiceBlockingStub serviceStub = ExchangeRateServiceGrpc.newBlockingStub(channel);
+        exchangeRateIterator = serviceStub.getExchangeRateStream(currencyCollection);
     }
 
     @Override
     public void run() {
-        Iterator<ExchangeRateCollection> currencyStatusCollectionIterator;
         try {
-            currencyStatusCollectionIterator = currencyServiceBlockingStub.getExchangeRateStream(currencyCollection);
-            while (currencyStatusCollectionIterator.hasNext()) {
-                ExchangeRateCollection currencyStatusCollection = currencyStatusCollectionIterator.next();
-                List<ExchangeRate> list = currencyStatusCollection.getExchangeRateList();
-
-                for (ExchangeRate currencyStatus : list) {
-                    exchangeRates.put(currencyStatus.getCurrency(),currencyStatus);
-                    log.info(currencyStatus.getCurrency() + ", buy: "+ currencyStatus.getBuy() +", sell: "+ currencyStatus.getSell());
-                }
-            }
+            exchangeRateIterator
+                    .forEachRemaining((rateCollection) -> {
+                        rateCollection.getExchangeRateList()
+                                .forEach((rate) -> exchangeRates.put(rate.getCurrency(), rate));
+                        log.info(getPrintableExchangeRates());
+                    });
         } catch (StatusRuntimeException ex) {
             log.warn("RPC failed:" + ex.getStatus());
         }
+    }
+
+    private String getPrintableExchangeRates(){
+        return exchangeRates.values().stream()
+                .map(er -> er.getCurrency() + ": buy: " + String.format("%8.5f", er.getBuy())  + ": sell: " + String.format("%8.5f", er.getSell()))
+                .collect(Collectors.joining("\n  ", "Exchange rates: \n  ",""));
     }
 }
