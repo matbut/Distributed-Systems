@@ -8,13 +8,13 @@ import java.util.Map;
 
 public class ExchangeRateRepository {
 
-    private static final double MIN_EXCHANGE_RATE = 0.1;
+    private static final double MIN_EXCHANGE_RATE = 1.0;
 
     private static final double MAX_EXCHANGE_RATE = 10.0;
 
     private static final double MIN_UPDATE_RATIO  = 0.8;
 
-    private static final double MAX_UPDATE_RATIO = 1.2;
+    private static final double MAX_UPDATE_RATIO = 1.4;
 
     private static final double EXCHANGE_DIFF = 1.1;
 

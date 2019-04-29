@@ -20,7 +20,7 @@ module sr {
         struct UserData {
             string firstName;
             string lastName;
-            string peselNumber;
+            string pesel;
             long monthlyIncome;
         };
 
@@ -36,25 +36,25 @@ module sr {
         };
 
         struct AccountInfo {
-            AccountType accountType;
             string password;
+            AccountType accountType;
         };
 
-        exception WrongPassword {};
-        exception AccountDoesNotExist {};
-        exception NotSupportedCurrency {};
+        exception WrongPasswordException {};
+        exception NotSupportedCurrencyException {};
 
         interface StandardAccount {
-            AccountType getAccountType(string peselNumber) throws WrongPassword;
+            double getAccountBalance(string pesel) throws WrongPasswordException;
         };
 
         interface PremiumAccount extends StandardAccount {
-            LoanOffer getLoanInfo(string peselNumber, LoanInquiry loanInquiry) throws WrongPassword, NotSupportedCurrency;
+            LoanOffer getLoanInfo(string pesel, LoanInquiry loanInquiry) throws WrongPasswordException, NotSupportedCurrencyException;
         };
 
         interface AccountFactory {
             AccountInfo createAccount(UserData userData);
-            StandardAccount* accessAccount(string peselNumber, AccountType accountType) throws AccountDoesNotExist;
+            StandardAccount* accessStandardAccount(string pesel);
+            PremiumAccount* accessPremiumAccount(string pesel);
         };
     };
   };

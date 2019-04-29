@@ -45,8 +45,11 @@ public class Bank {
         this.port = port;
         this.currencyCollection = currencyCollection;
 
-        ExchangeRateStorage exchangeRateStorage = new ExchangeRateStorage(currencyCollection);
-        new Thread(exchangeRateStorage).start();
+        ExchangeRateService exchangeRateService = new ExchangeRateService(currencyCollection);
+        new Thread(exchangeRateService).start();
+
+        AccountService accountService = new AccountService();
+        new Thread(accountService).start();
     }
 
     @Override

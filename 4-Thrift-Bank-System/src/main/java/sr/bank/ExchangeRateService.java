@@ -13,19 +13,19 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 
-public class ExchangeRateStorage implements Runnable {
+public class ExchangeRateService implements Runnable {
 
     private static String SERVER_HOST = "localhost";
 
     private static int SERVER_PORT = 50001;
 
-    private static final Logger log = LoggerFactory.getLogger(ExchangeRateStorage.class);
+    private static final Logger log = LoggerFactory.getLogger(ExchangeRateService.class);
 
     private Map<Currency, ExchangeRate> exchangeRates = new EnumMap<>(Currency.class);
 
     private Iterator<ExchangeRateCollection> exchangeRateIterator;
 
-    public ExchangeRateStorage(CurrencyCollection currencyCollection) {
+    public ExchangeRateService(CurrencyCollection currencyCollection) {
         ManagedChannel channel = ManagedChannelBuilder.forAddress(SERVER_HOST, SERVER_PORT)
                 .usePlaintext(true)
                 .build();
@@ -41,7 +41,7 @@ public class ExchangeRateStorage implements Runnable {
                     .forEachRemaining((rateCollection) -> {
                         rateCollection.getExchangeRateList()
                                 .forEach((rate) -> exchangeRates.put(rate.getCurrency(), rate));
-                        log.info(getPrintableExchangeRates());
+                        //log.info(getPrintableExchangeRates());
                     });
         } catch (StatusRuntimeException ex) {
             log.warn("RPC failed:" + ex.getStatus());
