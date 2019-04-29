@@ -2,4 +2,4 @@
 # The client reads this property to create the reference to the
 # AccountFactory object in the server.
 #
-AccountFactory.Proxy=accountService/accountFactory:default -h localhost -p 10000
+AccountFactory.Proxy=accountService/accountFactory:default -h localhost -p 50002

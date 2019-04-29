@@ -88,12 +88,20 @@ def consoleApp(bank_client):
                     print(fun(*args))
             else:
                 print('%s is not a valid command'%(selected))
-        except Slice.WrongPasswordException:
-            print("Wrong password")
-            break
+        except Slice.AuthenticationFailedException:
+            print('Wrong password or pesel number')
         except Slice.NotSupportedCurrencyException:
-            print("Not supported currency.")
-            break
+            print('Not supported currency')
+        except Ice.ObjectNotExistException:
+            print('Account does not exist')
+        except Ice.ObjectNotExistException:
+            print('Account does not exist')
+        except Ice.AlreadyRegisteredException:
+            print('Account arleady exists')
+        except AttributeError:
+            print('Not supported operation')
+        except ValueError:
+            print('Illegal value')
 
 def readArgs(argDict):
     currencies = {
@@ -112,7 +120,11 @@ def readArgs(argDict):
         if typo==float:
             read = float(read)
         if typo==Slice.Currency:
-            read = currencies[read.upper()]
+            try:
+                read = currencies[read.upper()]
+            except KeyError:
+                raise Slice.NotSupportedCurrencyException
+            
         args.append(read)
     return args
 

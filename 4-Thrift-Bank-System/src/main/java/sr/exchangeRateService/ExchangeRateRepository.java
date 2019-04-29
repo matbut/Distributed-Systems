@@ -1,8 +1,10 @@
 package sr.exchangeRateService;
 
-import sr.middleware.proto.*;
+import sr.middleware.proto.Currency;
+import sr.middleware.proto.ExchangeRate;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.EnumMap;
 import java.util.Map;
 
@@ -18,22 +20,23 @@ public class ExchangeRateRepository {
 
     private static final double EXCHANGE_DIFF = 1.1;
 
-    private final Map<Currency, ExchangeRate> repository = new EnumMap<Currency, ExchangeRate>(Currency.class) {
+    private final Map<Currency, ExchangeRate> repository = Collections.synchronizedMap(new EnumMap<Currency, ExchangeRate>(Currency.class){
         {
             Arrays.stream(Currency.values())
-                    .filter(currency -> currency != Currency.UNRECOGNIZED)
+                    .filter(currency -> currency != Currency.UNRECOGNIZED && currency != Currency.PLN)
                     .forEach(currency -> put(currency, randomExchangeRate(currency)));
         }
-    };
+    });
 
     public ExchangeRate getExchangeRate(Currency currency) {
         return repository.get(currency);
     }
 
     public void updateAll() {
-        repository.forEach(((currency, exchangeRate) -> {
-            repository.replace(currency, randomUpdate(exchangeRate));
-        }));
+        repository.
+                forEach(((currency, exchangeRate) ->
+                    repository.replace(currency, randomUpdate(exchangeRate))
+        ));
     }
 
     private ExchangeRate randomExchangeRate(Currency currency) {

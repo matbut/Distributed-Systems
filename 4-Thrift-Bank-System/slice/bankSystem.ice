@@ -40,15 +40,15 @@ module sr {
             AccountType accountType;
         };
 
-        exception WrongPasswordException {};
+        exception AuthenticationFailedException {};
         exception NotSupportedCurrencyException {};
 
         interface StandardAccount {
-            double getAccountBalance(string pesel) throws WrongPasswordException;
+            double getAccountBalance(string pesel) throws AuthenticationFailedException;
         };
 
         interface PremiumAccount extends StandardAccount {
-            LoanOffer getLoanInfo(string pesel, LoanInquiry loanInquiry) throws WrongPasswordException, NotSupportedCurrencyException;
+            LoanOffer getLoanInfo(string pesel, LoanInquiry loanInquiry) throws AuthenticationFailedException, NotSupportedCurrencyException;
         };
 
         interface AccountFactory {

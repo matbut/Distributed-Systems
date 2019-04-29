@@ -11,9 +11,9 @@ public class ExchangeRateServer {
 
     private static final Logger log = LoggerFactory.getLogger(ExchangeRateServer.class);
 
-    private static final int port = 50001;
-
     public static void main(String[] args) throws IOException, InterruptedException {
+
+        int port = Integer.valueOf(args[0]);
 
         Server server = ServerBuilder
                 .forPort(port)
@@ -24,7 +24,7 @@ public class ExchangeRateServer {
 
         Runtime.getRuntime().addShutdownHook(new Thread(server::shutdown));
 
-        log.info("Exchange Rate Server started.");
+        log.info("Exchange Rate Server is listening on port " + port);
 
         server.awaitTermination();
     }
