@@ -1,0 +1,50 @@
+[
+  {
+    "id": 101,
+    "title": "Pride and Prejudice",
+    "price": 15,
+    "file": "database/books/PrideAndPrejudice.txt"
+  },
+  {
+    "id": 102,
+    "title": "Hitchhiker's guide to the Galaxy",
+    "price": 20,
+    "file": ""
+  },
+  {
+    "id": 103,
+    "title": "The colour of magic",
+    "price": 12,
+    "file": ""
+  },
+  {
+    "id": 104,
+    "title": "Shogun",
+    "price": 50,
+    "file": ""
+  },
+  {
+    "id": 105,
+    "title": "Cat's cradle",
+    "price": 22,
+    "file": ""
+  },
+  {
+    "id": 106,
+    "title": "Slaughterhouse no. 6",
+    "price": 33,
+    "file": ""
+  },
+  {
+    "id": 107,
+    "title": "Hitchhiker's guide to the Galaxy",
+    "price": 20,
+    "file": ""
+  },
+  {
+    "id": 108,
+    "title": "The colour of magic",
+    "price": 12,
+    "file": ""
+  }
+]

@@ -1,0 +1,51 @@
+[
+  {
+    "id": 201,
+    "title": "Potop",
+    "price": 117,
+    "file": ""
+  },
+  {
+    "id": 202,
+    "title": "Kordian",
+    "price": 33,
+    "file": ""
+  },
+  {
+    "id": 203,
+    "title": "Konrad Wallenrod",
+    "price": 117,
+    "file": ""
+  },
+  {
+    "id": 204,
+    "title": "Odprawa posłów greckich",
+    "price": 97,
+    "file": ""
+  },
+  {
+    "id": 205,
+    "title": "Lalka",
+    "price": 87,
+    "file": ""
+  },
+  {
+    "id": 206,
+    "title": "Wesele",
+    "price": 95,
+    "file": ""
+  },
+  {
+    "id": 207,
+    "title": "Ferdydurke",
+    "price": 97,
+    "file": ""
+  },
+  {
+    "id": 208,
+    "title": "Pan Tadeusz",
+    "price": 113,
+    "file": "database/books/PanTadeusz.txt"
+
+  }
+]
