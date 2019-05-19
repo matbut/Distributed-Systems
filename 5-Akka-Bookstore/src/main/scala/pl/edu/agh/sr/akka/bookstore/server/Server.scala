@@ -1,7 +1,8 @@
 package pl.edu.agh.sr.akka.bookstore.server
 
-import akka.actor.SupervisorStrategy.Stop
-import akka.actor.{Actor, ActorLogging, ActorSystem, OneForOneStrategy, Props}
+import akka.actor.SupervisorStrategy.{Restart, Stop}
+import akka.actor.{Actor, ActorInitializationException, ActorLogging, ActorSystem, OneForOneStrategy, Props}
+import akka.event.LoggingReceive
 import com.typesafe.config.{Config, ConfigFactory}
 import pl.edu.agh.sr.akka.bookstore.communication._
 import pl.edu.agh.sr.akka.bookstore.server.database.DatabaseManager
@@ -14,14 +15,15 @@ import scala.io.StdIn
 class Server extends Actor with ActorLogging {
   override val supervisorStrategy: OneForOneStrategy =
     OneForOneStrategy(maxNrOfRetries = 10, withinTimeRange = 1 minute) {
-      case _ => Stop
+      case _: ActorInitializationException => Stop
+      case _ => Restart
     }
 
   private val databaseManager = context.actorOf(Props[DatabaseManager], "databaseManager")
   private val orderManager = context.actorOf(Props[OrderManager], "orderManager")
   private val streamManager = context.actorOf(Props[StreamManager], "streamManager")
 
-  override def receive: Receive = {
+  override def receive: Receive = LoggingReceive {
     case request: SearchRequest =>
       databaseManager.tell(request, sender)
     case request: OrderRequest =>

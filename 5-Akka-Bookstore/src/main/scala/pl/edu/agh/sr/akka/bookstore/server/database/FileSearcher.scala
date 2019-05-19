@@ -1,6 +1,7 @@
 package pl.edu.agh.sr.akka.bookstore.server.database
 
 import akka.actor.{Actor, ActorLogging}
+import akka.event.LoggingReceive
 import net.liftweb.json._
 import pl.edu.agh.sr.akka.bookstore.communication._
 
@@ -13,7 +14,7 @@ class FileSearcher(val filePath:String) extends Actor with ActorLogging {
 
     val database: List[Book] = parse(try source.mkString finally source.close()).extract[List[Book]]
 
-    def receive:Receive = {
+    def receive:Receive = LoggingReceive {
         case SearchRequest(title) => {
             sender ! SearchResponse(database.find(_.title == title))
             context.stop(self)
