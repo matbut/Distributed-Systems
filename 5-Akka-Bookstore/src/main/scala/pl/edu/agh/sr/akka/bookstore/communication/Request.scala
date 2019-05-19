@@ -8,4 +8,4 @@ final case class OrderRequest(title: String) extends Request
 
 final case class CheckedOrderRequest(title: String) extends Request
 
-final case class ContentRequest(title: String) extends Request
+final case class StreamRequest(title: String) extends Request

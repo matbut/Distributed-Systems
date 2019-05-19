@@ -19,11 +19,14 @@ class Client(serverPath: String) extends Actor with ActorLogging {
           context.actorSelection(serverPath) ! SearchRequest(instr)
         case orderCommand(instr) =>
           context.actorSelection(serverPath) ! OrderRequest(instr)
+        case streamCommmand(instr) =>
+          context.actorSelection(serverPath) ! StreamRequest(instr)
         case instr =>
           println(s"Unsupported command: '$instr'")
       }
     case SearchResponse(book) => println(book.getOrElse(None))
     case OrderResponse(status) => println(s"Order status: [$status]")
+    case StreamResponse(stream) => println(stream.utf8String)
     case unsupported => log.warning(s"Received unsupported message [$unsupported]")
   }
 }
