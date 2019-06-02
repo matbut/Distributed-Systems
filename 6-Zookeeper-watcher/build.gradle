@@ -1,0 +1,19 @@
+plugins {
+    id 'java'
+}
+
+group 'Zookeeper-watcher'
+version '1.0-SNAPSHOT'
+
+sourceCompatibility = 1.8
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    testCompile group: 'junit', name: 'junit', version: '4.12'
+    compile group: 'org.apache.zookeeper', name: 'zookeeper', version: '3.4.5'
+    compile group: 'org.slf4j', name: 'slf4j-api', version: '1.7.25'
+    compile group: 'org.slf4j', name: 'slf4j-jdk14', version: '1.7.25'
+}
