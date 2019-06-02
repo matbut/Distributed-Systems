@@ -94,8 +94,6 @@ def consoleApp(bank_client):
             print('Not supported currency')
         except Ice.ObjectNotExistException:
             print('Account does not exist')
-        except Ice.ObjectNotExistException:
-            print('Account does not exist')
         except Ice.AlreadyRegisteredException:
             print('Account arleady exists')
         except AttributeError:
